@@ -2,6 +2,8 @@ import os
 import pandas as pd
 import vitaldb
 import numpy as np
+import random
+import argparse
 
 # Configuration
 RAW_DIR = "data/vitaldb/raw"
@@ -16,13 +18,18 @@ SAMPLES_PER_SEGMENT = SAMPLING_RATE * SEGMENT_LEN_SEC
 # Ensure output directory exists
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 
-def extract_signals():
+def extract_signals(n=None):
     # Find all downloaded waveform files
     vital_files = [f for f in os.listdir(WAVEFORM_DIR) if f.endswith('.vital')]
     
     if not vital_files:
         print("No .vital files found in raw/waveforms. Please run the download script first.")
         return
+
+    if n is not None:
+        n = min(n, len(vital_files))
+        print(f"Randomly selecting {n} cases out of {len(vital_files)}")
+        vital_files = random.sample(vital_files, n)
 
     for vf_name in vital_files:
         case_id = vf_name.replace('.vital', '')
@@ -69,11 +76,25 @@ def extract_signals():
             if np.isnan(segment_data).any() or np.std(segment_data[:, 1]) < 0.001:
                 continue
 
+            # Determine label based on annotations in this time window
+            start_time_sec = start_idx / SAMPLING_RATE
+            end_time_sec = end_idx / SAMPLING_RATE
+            
+            seg_ann = ann_df[(ann_df['time_second'] >= start_time_sec) & (ann_df['time_second'] < end_time_sec)]
+            
+            beats = set(seg_ann['beat_type'].dropna().unique())
+            rhythms = set(seg_ann['rhythm_label'].dropna().unique())
+            
+            # Normal if only Normal/Unknown beats and Normal/Noise rhythms. Abnormal otherwise.
+            is_abnormal = bool(beats - {'N', 'U'}) or bool(rhythms - {'N', 'Noise'})
+            label = "Abnormal" if is_abnormal else "Normal"
+
             # Create long-form DataFrame for this segment
             seg_df = pd.DataFrame({
                 'case_id': case_id,
                 # 'patient_id': patient_id,
                 'segment_id': f"{case_id}_{i}",
+                'label': label,
                 'timestamp_idx': np.arange(SAMPLES_PER_SEGMENT),
                 'ecg_v': segment_data[:, 0],
                 'ppg_v': segment_data[:, 1]
@@ -93,4 +114,4 @@ def extract_signals():
             print(f"  [!] No valid segments extracted for Case {case_id}.")
 
 if __name__ == "__main__":
-    extract_signals()
+    extract_signals(n=10)
