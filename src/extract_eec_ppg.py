@@ -114,4 +114,4 @@ def extract_signals(n=None):
             print(f"  [!] No valid segments extracted for Case {case_id}.")
 
 if __name__ == "__main__":
-    extract_signals(n=10)
+    extract_signals(n=None)
